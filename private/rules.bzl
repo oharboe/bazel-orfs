@@ -1550,7 +1550,7 @@ def _yosys_impl(ctx):
         name = ctx.attr.name + "_deps",
     )
 
-    _runfiles_files = [config_short, make] + outputs + canon_logs + synth_logs + ctx.files.extra_configs
+    _runfiles_files = [config_short, make] + outputs + canon_logs + synth_logs + ctx.files.extra_configs + ctx.files.data
     _runfiles_common = depset(
         transitive = [
             deps_inputs(ctx),
