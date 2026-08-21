@@ -3,7 +3,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//:openroad.bzl", "get_stage_args", "orfs_arguments", "orfs_floorplan", "orfs_flow", "orfs_gds", "orfs_macro", "orfs_place", "orfs_run", "orfs_run_executable", "orfs_synth", "orfs_variables")
+load("//:openroad.bzl", "get_stage_args", "orfs_arguments", "orfs_floorplan", "orfs_flow", "orfs_gds", "orfs_macro", "orfs_place", "orfs_run", "orfs_run_executable", "orfs_synth", "orfs_variables", "orfs_test")
 load("//:orfs_genrule.bzl", "orfs_genrule")
 load("//:sweep.bzl", "orfs_sweep")
 load(":deps_output_group_rule.bzl", "deps_output_group_test", "output_group_test")
@@ -1577,4 +1577,28 @@ sh_test(
     srcs = ["verify_orfs_run_sources.sh"],
     args = ["$(location :test_orfs_run_sources.txt)"],
     data = [":test_orfs_run_sources.txt"],
+)
+
+orfs_test(
+    name = "test_leak_single_stage",
+    src = ":lb_32x128_place",
+    cmd = "run",
+    script = ":verify_no_leak.tcl",
+    stages = ["synth"],
+)
+
+orfs_test(
+    name = "test_leak_two_stages",
+    src = ":lb_32x128_place",
+    cmd = "run",
+    script = ":verify_no_leak.tcl",
+    stages = ["synth", "floorplan"],
+)
+
+orfs_test(
+    name = "test_leak_empty_stages",
+    src = ":lb_32x128_place",
+    cmd = "run",
+    script = ":verify_leak.tcl",
+    stages = [],
 )

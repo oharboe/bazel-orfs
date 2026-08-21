@@ -383,7 +383,42 @@ def _run_impl(ctx):
 
     original_config = config
     all_jsons = ctx.files.extra_arguments
-    if all_jsons:
+    
+    if hasattr(ctx.attr, "stages") and ctx.attr.stages:
+        allowed_vars = []
+        for s in ctx.attr.stages:
+            allowed_vars.extend(ALL_STAGE_TO_VARIABLES.get(s, []))
+
+        filter_json = declare_artifact(ctx, "results", ctx.attr.name + ".filter.json")
+        ctx.actions.write(
+            output = filter_json,
+            content = json.encode({
+                "allowed": allowed_vars,
+                "known": ALL_VARIABLE_TO_STAGES.keys(),
+            }),
+        )
+
+        new_config = declare_artifact(ctx, "results", ctx.attr.name + ".config.mk")
+        args = [
+            ctx.file._merge_arguments.path,
+            new_config.path,
+            "--filter",
+            filter_json.path,
+        ]
+
+        inherited_jsons = ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else []
+        all_input_jsons = inherited_jsons + all_jsons
+        args.extend([f.path for f in all_input_jsons])
+
+        ctx.actions.run(
+            executable = ctx.executable._python,
+            arguments = args,
+            inputs = all_input_jsons + [ctx.file._merge_arguments, filter_json],
+            outputs = [new_config],
+        )
+        config = new_config
+        extra_files = []
+    elif all_jsons:
         new_config = declare_artifact(ctx, "results", ctx.attr.name + ".config.mk")
 
         args = [ctx.file._merge_arguments.path, new_config.path]
@@ -657,6 +692,42 @@ orfs_arguments = rule(
 def _test_impl(ctx):
     config = ctx.attr.src[OrfsDepInfo].config
 
+    original_config = config
+    
+    if hasattr(ctx.attr, "stages") and ctx.attr.stages:
+        allowed_vars = []
+        for s in ctx.attr.stages:
+            allowed_vars.extend(ALL_STAGE_TO_VARIABLES.get(s, []))
+
+        filter_json = declare_artifact(ctx, "results", ctx.attr.name + ".filter.json")
+        ctx.actions.write(
+            output = filter_json,
+            content = json.encode({
+                "allowed": allowed_vars,
+                "known": ALL_VARIABLE_TO_STAGES.keys(),
+            }),
+        )
+
+        new_config = declare_artifact(ctx, "results", ctx.attr.name + ".config.mk")
+        args = [
+            ctx.file._merge_arguments.path,
+            new_config.path,
+            "--filter",
+            filter_json.path,
+        ]
+
+        inherited_jsons = ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else []
+        all_input_jsons = inherited_jsons
+        args.extend([f.path for f in all_input_jsons])
+
+        ctx.actions.run(
+            executable = ctx.executable._python,
+            arguments = args,
+            inputs = all_input_jsons + [ctx.file._merge_arguments, filter_json],
+            outputs = [new_config],
+        )
+        config = new_config
+
     test = ctx.actions.declare_file(
         "make_{}_{}_test".format(ctx.attr.name, ctx.attr.variant),
     )
@@ -679,6 +750,10 @@ def _test_impl(ctx):
             work_home = "/".join(parts)
         else:
             work_home = None
+            
+        script_inputs = [ctx.file.script] if hasattr(ctx.attr, "script") and ctx.file.script else []
+        script_arg = {"RUN_SCRIPT": ctx.file.script.path} if hasattr(ctx.attr, "script") and ctx.file.script else {}
+
         ctx.actions.write(
             output = test,
             is_executable = True,
@@ -696,7 +771,7 @@ fi
                 makefile = ctx.file._makefile.path,
                 moreargs = environment_string(
                     hack_away_prefix(
-                        arguments = odb_arguments(ctx) | sdc_arguments(ctx) | data_arguments(ctx),
+                        arguments = odb_arguments(ctx) | sdc_arguments(ctx) | data_arguments(ctx) | script_arg,
                         prefix = config.root.path,
                     ) |
                     {"DESIGN_CONFIG": config.short_path} |
@@ -712,7 +787,7 @@ fi
             executable = test,
             runfiles = ctx.runfiles(
                 transitive_files = depset(
-                    [config, test],
+                    [config, test] + script_inputs,
                     transitive = [
                         test_inputs(ctx),
                         data_inputs(ctx),
@@ -731,6 +806,14 @@ orfs_test = rule(
                 "cmd": attr.string(
                     mandatory = False,
                     default = "metadata-check",
+                ),
+                "script": attr.label(
+                    mandatory = False,
+                    allow_single_file = ["tcl", "sh", "py"],
+                ),
+                "stages": attr.string_list(
+                    mandatory = False,
+                    default = [],
                 ),
             },
     test = True,
