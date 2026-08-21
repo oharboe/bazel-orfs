@@ -16,7 +16,6 @@ load(
     "//private:environment.bzl",
     "EXPAND_VERILOG_DIRS",
     "config_arguments",
-    "config_content",
     "config_environment",
     "config_overrides",
     "data_arguments",
@@ -383,40 +382,12 @@ def _run_impl(ctx):
         outs.extend(getattr(ctx.outputs, k))
 
     original_config = config
-    all_jsons = ctx.files.extra_arguments + (ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else [])
+    all_jsons = ctx.files.extra_arguments
     if all_jsons:
         new_config = declare_artifact(ctx, "results", ctx.attr.name + ".config.mk")
 
         args = [ctx.file._merge_arguments.path, new_config.path]
         inputs = all_jsons + [ctx.file._merge_arguments]
-
-        if OrfsInfo in ctx.attr.src:
-            stage = ctx.attr.src[OrfsInfo].stage
-            filter_json = declare_artifact(ctx, "results", ctx.attr.name + ".filter.json")
-
-            # Resolve canonical stage name
-            canonical_stage = stage
-            for s in ALL_STAGE_TO_VARIABLES.keys():
-                if stage.endswith("_" + s) or stage == s:
-                    canonical_stage = s
-                    break
-
-            allowed_vars = []
-            if getattr(ctx.attr, "stages", []):
-                for s in ctx.attr.stages:
-                    allowed_vars.extend(ALL_STAGE_TO_VARIABLES.get(s, []))
-            else:
-                allowed_vars = ALL_STAGE_TO_VARIABLES.get(canonical_stage, [])
-
-            ctx.actions.write(
-                output = filter_json,
-                content = json.encode({
-                    "allowed": allowed_vars,
-                    "known": ALL_VARIABLE_TO_STAGES.keys(),
-                }),
-            )
-            args.extend(["--filter", filter_json.path])
-            inputs.append(filter_json)
 
         args.extend(["--include", original_config.path])
         inputs.append(original_config)
@@ -521,7 +492,7 @@ def _run_impl(ctx):
         ),
     ]
 
-orfs_run = rule(
+_orfs_run_rule = rule(
     implementation = _run_impl,
     attrs = yosys_attrs() |
             openroad_attrs() |
@@ -548,6 +519,36 @@ orfs_run = rule(
                 ),
             },
 )
+
+def orfs_run(**kwargs):
+    """Rule wrapper for orfs_run to populate data dependencies and CLI arguments from explicitly specified sources.
+
+    Args:
+        **kwargs: The keyword arguments to pass to the underlying _orfs_run_rule.
+    """
+    sources = kwargs.pop("sources", {})
+    if sources:
+        data = kwargs.pop("data", [])
+        if type(data) != "list":
+            data = list(data)
+        arguments = dict(kwargs.pop("arguments", {}))
+
+        for var, labels in sources.items():
+            if type(labels) != "list":
+                labels = [labels]
+            for label in labels:
+                if label not in data:
+                    data.append(label)
+            locs = " ".join(["$(locations {})".format(label) for label in labels])
+            if var in arguments:
+                arguments[var] = arguments[var] + " " + locs
+            else:
+                arguments[var] = locs
+
+        kwargs["data"] = data
+        kwargs["arguments"] = arguments
+
+    _orfs_run_rule(**kwargs)
 
 def _variables_impl(ctx):
     out = ctx.actions.declare_file(ctx.attr.name + ".json")
@@ -1144,7 +1145,6 @@ def _yosys_parallel_synth(ctx, config, canon_output, synth_outputs, synth_logs, 
     # Base arguments common to every partition config (data + required;
     # ADDITIONAL_* gets layered on per-partition).
     base_arguments = data_arguments(ctx) | required_arguments(ctx)
-    extra_config_paths = [file.path for file in ctx.files.extra_configs]
 
     # kept_modules_list is computed earlier (before Action 2c per-module
     # canonicalize) so we don't recompute it here.

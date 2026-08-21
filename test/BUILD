@@ -1519,3 +1519,62 @@ py_test(
     srcs = ["mock_optuna_test.py"],
     data = [":mock_tuner_executable"],
 )
+
+# --- Tests for explicit orfs_run sources ---
+
+write_file(
+    name = "test_source_1",
+    out = "test_source_1.txt",
+    content = ["test_source_content"],
+)
+
+write_file(
+    name = "test_source_2",
+    out = "test_source_2.txt",
+    content = ["second_source_content"],
+)
+
+write_file(
+    name = "dump_sources_tcl",
+    out = "dump_sources.tcl",
+    content = ["""
+set fp [open $::env(OUT_vars_txt) w]
+if {[info exists ::env(TEST_SOURCE_1)]} {
+    set fd1 [open $::env(TEST_SOURCE_1) r]
+    puts $fp [read $fd1]
+    close $fd1
+}
+if {[info exists ::env(TEST_SOURCES)]} {
+    foreach src $::env(TEST_SOURCES) {
+        set fdn [open $src r]
+        puts $fp [read $fdn]
+        close $fdn
+    }
+}
+close $fp
+"""],
+)
+
+orfs_run(
+    name = "test_orfs_run_sources",
+    src = ":lb_32x128_synth",
+    outs = ["test_orfs_run_sources.txt"],
+    arguments = {
+        "OUT_vars_txt": "$(location :test_orfs_run_sources.txt)",
+    },
+    script = ":dump_sources_tcl",
+    sources = {
+        "TEST_SOURCE_1": ":test_source_1",
+        "TEST_SOURCES": [
+            ":test_source_1",
+            ":test_source_2",
+        ],
+    },
+)
+
+sh_test(
+    name = "orfs_run_sources_test",
+    srcs = ["verify_orfs_run_sources.sh"],
+    args = ["$(location :test_orfs_run_sources.txt)"],
+    data = [":test_orfs_run_sources.txt"],
+)
