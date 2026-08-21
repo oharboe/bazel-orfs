@@ -383,18 +383,25 @@ def _run_impl(ctx):
         outs.extend(getattr(ctx.outputs, k))
 
     original_config = config
-    all_jsons = ctx.files.extra_arguments
-    inherited_jsons = ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else []
-    
-    config, extra_files = merge_and_filter_arguments(
-        ctx,
-        category = "results",
-        name = ctx.attr.name,
-        original_config = original_config,
-        inherited_jsons = inherited_jsons,
-        extra_jsons = all_jsons,
-        stages = getattr(ctx.attr, "stages", []),
-    )
+    all_jsons = ctx.files.extra_arguments + (ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else [])
+    if all_jsons:
+        new_config = declare_artifact(ctx, "results", ctx.attr.name + ".config.mk")
+
+        args = [ctx.file._merge_arguments.path, new_config.path]
+        inputs = all_jsons + [ctx.file._merge_arguments]
+
+                args.extend([f.path for f in all_jsons])
+
+        ctx.actions.run(
+            executable = ctx.executable._python,
+            arguments = args,
+            inputs = inputs,
+            outputs = [new_config],
+        )
+        config = new_config
+        extra_files = [original_config]
+    else:
+        extra_files = [original_config]
 
     ctx.actions.run_shell(
         arguments = [
@@ -688,7 +695,7 @@ def _test_impl(ctx):
             
         script_inputs = [ctx.file.script] if hasattr(ctx.attr, "script") and ctx.file.script else []
         script_arg = {"RUN_SCRIPT": ctx.file.script.path} if hasattr(ctx.attr, "script") and ctx.file.script else {}
-
+        
         ctx.actions.write(
             output = test,
             is_executable = True,
