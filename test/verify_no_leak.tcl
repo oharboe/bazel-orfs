@@ -1,7 +1,7 @@
-if {[info exists ::env(PLACE_DENSITY)]} {
-    puts "Error: PLACE_DENSITY leaked!"
+if {[info exists ::env(GLOBAL_PLACEMENT_ARGS)] && $::env(GLOBAL_PLACEMENT_ARGS) == "-overflow 0.2"} {
+    puts "Error: GLOBAL_PLACEMENT_ARGS leaked! Value is $::env(GLOBAL_PLACEMENT_ARGS)"
     exit 1
 } else {
-    puts "Success: PLACE_DENSITY did not leak."
+    puts "Success: GLOBAL_PLACEMENT_ARGS did not leak."
     exit 0
 }

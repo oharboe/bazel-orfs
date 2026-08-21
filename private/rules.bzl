@@ -385,7 +385,7 @@ def _run_impl(ctx):
     original_config = config
     all_jsons = ctx.files.extra_arguments
     inherited_jsons = ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else []
-    
+
     config, extra_files = merge_and_filter_arguments(
         ctx,
         category = "results",
@@ -512,12 +512,8 @@ _orfs_run_rule = rule(
             },
 )
 
-def orfs_run(**kwargs):
-    """Rule wrapper for orfs_run to populate data dependencies and CLI arguments from explicitly specified sources.
-
-    Args:
-        **kwargs: The keyword arguments to pass to the underlying _orfs_run_rule.
-    """
+def _expand_sources(kwargs):
+    """Processes the 'sources' attribute into 'data' and 'arguments'."""
     sources = kwargs.pop("sources", {})
     if sources:
         data = kwargs.pop("data", [])
@@ -539,8 +535,15 @@ def orfs_run(**kwargs):
 
         kwargs["data"] = data
         kwargs["arguments"] = arguments
+    return kwargs
 
-    _orfs_run_rule(**kwargs)
+def orfs_run(**kwargs):
+    """Rule wrapper for orfs_run to populate data dependencies and CLI arguments from explicitly specified sources.
+
+    Args:
+        **kwargs: The keyword arguments to pass to the underlying _orfs_run_rule.
+    """
+    _orfs_run_rule(**_expand_sources(kwargs))
 
 def _variables_impl(ctx):
     out = ctx.actions.declare_file(ctx.attr.name + ".json")
@@ -649,11 +652,9 @@ orfs_arguments = rule(
 def _test_impl(ctx):
     config = ctx.attr.src[OrfsDepInfo].config
 
-    original_config = config
-    
     inherited_jsons = ctx.attr.src[OrfsInfo].arguments.to_list() if OrfsInfo in ctx.attr.src else []
-    
-    config, _ = merge_and_filter_arguments(
+
+    config, extra_files = merge_and_filter_arguments(
         ctx,
         category = "results",
         name = ctx.attr.name,
@@ -666,6 +667,8 @@ def _test_impl(ctx):
     test = ctx.actions.declare_file(
         "make_{}_{}_test".format(ctx.attr.name, ctx.attr.variant),
     )
+
+    script_inputs = []
 
     if ctx.attr.lint:
         # Lint mode: test just verifies the dependency chain builds.
@@ -685,9 +688,24 @@ def _test_impl(ctx):
             work_home = "/".join(parts)
         else:
             work_home = None
-            
-        script_inputs = [ctx.file.script] if hasattr(ctx.attr, "script") and ctx.file.script else []
-        script_arg = {"RUN_SCRIPT": ctx.file.script.path} if hasattr(ctx.attr, "script") and ctx.file.script else {}
+
+        if hasattr(ctx.attr, "script") and ctx.file.script:
+            script_inputs = [ctx.file.script]
+            script_arg = {"RUN_SCRIPT": ctx.file.script.path}
+        else:
+            script_inputs = []
+            script_arg = {}
+
+        tool_env = {
+            "OPENROAD_EXE": ctx.executable.openroad.short_path,
+            "OPENSTA_EXE": ctx.executable.opensta.short_path,
+            "YOSYS_EXE": ctx.executable.yosys.short_path,
+            "KLAYOUT_CMD": ctx.executable._klayout.short_path if hasattr(ctx.executable, "_klayout") and ctx.executable._klayout else "",
+            "PYTHON_EXE": ctx.executable._python.short_path,
+            "ABC": ctx.executable._abc.short_path,
+            "FLOW_HOME": ctx.file._makefile.dirname,
+            "STDBUF_CMD": "",
+        }
 
         ctx.actions.write(
             output = test,
@@ -699,14 +717,17 @@ if [ ! -e external ]; then
     # Needed as of Bazel >= 8
     ln -sf $(realpath $(pwd)/..) external
 fi
+mkdir -p $(dirname {bin_dir})
+ln -sfn $(pwd) {bin_dir}
 {make} --file {makefile} {moreargs} {cmd}
 """.format(
                 cmd = ctx.attr.cmd,
                 make = ctx.executable._make.short_path,
                 makefile = ctx.file._makefile.path,
+                bin_dir = ctx.bin_dir.path,
                 moreargs = environment_string(
                     hack_away_prefix(
-                        arguments = odb_arguments(ctx) | sdc_arguments(ctx) | data_arguments(ctx) | script_arg,
+                        arguments = odb_arguments(ctx) | sdc_arguments(ctx) | data_arguments(ctx) | script_arg | tool_env,
                         prefix = config.root.path,
                     ) |
                     {"DESIGN_CONFIG": config.short_path} |
@@ -722,23 +743,25 @@ fi
             executable = test,
             runfiles = ctx.runfiles(
                 transitive_files = depset(
-                    [config, test] + script_inputs,
+                    [config, test] + script_inputs + extra_files,
                     transitive = [
                         test_inputs(ctx),
                         data_inputs(ctx),
                         source_inputs(ctx),
                         flow_inputs(ctx),
                         yosys_inputs(ctx),
+                        ctx.attr.src[OrfsDepInfo].files,
                     ],
                 ),
-            ),
+            ).merge(ctx.attr.src[DefaultInfo].default_runfiles).merge(ctx.attr.src[OrfsDepInfo].runfiles),
         ),
     ]
 
-orfs_test = rule(
+_orfs_rule_test = rule(
     implementation = _test_impl,
     attrs = yosys_attrs() |
             openroad_attrs() |
+            flow_attrs() |
             {
                 "cmd": attr.string(
                     mandatory = False,
@@ -755,6 +778,14 @@ orfs_test = rule(
             },
     test = True,
 )
+
+def orfs_test(**kwargs):
+    """Rule wrapper for orfs_test to populate data dependencies and CLI arguments from explicitly specified sources.
+
+    Args:
+        **kwargs: The keyword arguments to pass to the underlying _orfs_rule_test.
+    """
+    _orfs_rule_test(**_expand_sources(kwargs))
 
 # --- Run-executable rule ---
 #

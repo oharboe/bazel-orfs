@@ -65,6 +65,14 @@ def flow_environment(ctx):
     } | orfs_environment(ctx)
 
 def yosys_environment(ctx):
+    """Returns the environment dictionary for Yosys.
+
+    Args:
+      ctx: The rule context.
+
+    Returns:
+      A dictionary representing the Yosys environment.
+    """
     env = {
         "ABC": ctx.executable._abc.path,
         "FLOW_HOME": ctx.file._makefile_yosys.dirname,
@@ -454,6 +462,15 @@ def _prefix_include_dirs(dirs_value, prefix):
     ])
 
 def config_arguments(ctx, arguments):
+    """Adds overrides and workarounds to the provided arguments dictionary.
+
+    Args:
+      ctx: The rule context.
+      arguments: The dictionary of arguments to augment.
+
+    Returns:
+      A dictionary of the arguments including overrides.
+    """
     workaround = {
         # https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/issues/3907
         "LEC_CHECK": "0",
@@ -628,7 +645,7 @@ def extensionless_basename(file):
 def merge_and_filter_arguments(ctx, category, name, original_config, inherited_jsons, extra_jsons, stages):
     """
     Merges configuration jsons and optionally filters them by stages.
-    
+
     Args:
       ctx: The rule context.
       category: output category for declare_artifact.
@@ -689,5 +706,5 @@ def merge_and_filter_arguments(ctx, category, name, original_config, inherited_j
             outputs = [new_config],
         )
         return new_config, [original_config]
-    
+
     return original_config, [original_config]
