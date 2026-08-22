@@ -176,7 +176,7 @@ git_override(
         # feed a truncated/HTML response into tar (seen in CI as "xz:
         # File format not recognized"). Stage to a file first for a
         # clearer error if extraction fails.
-        "curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o xcb-util-cursor-0.1.5.tar.xz https://xorg.freedesktop.org/archive/individual/lib/xcb-util-cursor-0.1.5.tar.xz && tar xJf xcb-util-cursor-0.1.5.tar.xz --strip-components=1 -C interface_libs/xcb xcb-util-cursor-0.1.5/cursor && rm xcb-util-cursor-0.1.5.tar.xz",
+        "curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o xcb-util-cursor-0.1.5.tar.gz https://gitlab.freedesktop.org/xorg/lib/libxcb-cursor/-/archive/xcb-util-cursor-0.1.5/libxcb-cursor-xcb-util-cursor-0.1.5.tar.gz && tar xzf xcb-util-cursor-0.1.5.tar.gz --strip-components=1 -C interface_libs/xcb libxcb-cursor-xcb-util-cursor-0.1.5/cursor && rm xcb-util-cursor-0.1.5.tar.gz",
     ],
     patch_strip = 1,
     patches = [

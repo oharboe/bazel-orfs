@@ -16,7 +16,6 @@ load(
     "//private:environment.bzl",
     "EXPAND_VERILOG_DIRS",
     "config_arguments",
-    "config_content",
     "config_environment",
     "config_overrides",
     "data_arguments",
@@ -521,7 +520,7 @@ def _run_impl(ctx):
         ),
     ]
 
-orfs_run = rule(
+_orfs_run_rule = rule(
     implementation = _run_impl,
     attrs = yosys_attrs() |
             openroad_attrs() |
@@ -548,6 +547,39 @@ orfs_run = rule(
                 ),
             },
 )
+
+def _expand_sources(kwargs):
+    """Processes the 'sources' attribute into 'data' and 'arguments'."""
+    sources = kwargs.pop("sources", {})
+    if sources:
+        data = kwargs.pop("data", [])
+        if type(data) != "list":
+            data = list(data)
+        arguments = dict(kwargs.pop("arguments", {}))
+
+        for var, labels in sources.items():
+            if type(labels) != "list":
+                labels = [labels]
+            for label in labels:
+                if label not in data:
+                    data.append(label)
+            locs = " ".join(["$(locations {})".format(label) for label in labels])
+            if var in arguments:
+                arguments[var] = arguments[var] + " " + locs
+            else:
+                arguments[var] = locs
+
+        kwargs["data"] = data
+        kwargs["arguments"] = arguments
+    return kwargs
+
+def orfs_run(**kwargs):
+    """Rule wrapper for orfs_run to populate data dependencies and CLI arguments from explicitly specified sources.
+
+    Args:
+        **kwargs: The keyword arguments to pass to the underlying _orfs_run_rule.
+    """
+    _orfs_run_rule(**_expand_sources(kwargs))
 
 def _variables_impl(ctx):
     out = ctx.actions.declare_file(ctx.attr.name + ".json")
@@ -722,7 +754,7 @@ fi
         ),
     ]
 
-orfs_test = rule(
+_orfs_rule_test = rule(
     implementation = _test_impl,
     attrs = yosys_attrs() |
             openroad_attrs() |
@@ -734,6 +766,14 @@ orfs_test = rule(
             },
     test = True,
 )
+
+def orfs_test(**kwargs):
+    """Rule wrapper for orfs_test to populate data dependencies and CLI arguments from explicitly specified sources.
+
+    Args:
+        **kwargs: The keyword arguments to pass to the underlying _orfs_rule_test.
+    """
+    _orfs_rule_test(**_expand_sources(kwargs))
 
 # --- Run-executable rule ---
 #
@@ -1144,7 +1184,6 @@ def _yosys_parallel_synth(ctx, config, canon_output, synth_outputs, synth_logs, 
     # Base arguments common to every partition config (data + required;
     # ADDITIONAL_* gets layered on per-partition).
     base_arguments = data_arguments(ctx) | required_arguments(ctx)
-    extra_config_paths = [file.path for file in ctx.files.extra_configs]
 
     # kept_modules_list is computed earlier (before Action 2c per-module
     # canonicalize) so we don't recompute it here.
