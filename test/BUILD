@@ -1605,3 +1605,10 @@ orfs_test(
     script = ":verify_leak.tcl",
     stages = [],
 )
+
+orfs_test(
+    name = "test_platform_not_filtered",
+    src = ":lb_32x128_place",
+    cmd = "run",
+    script = ":verify_platform.tcl",
+)
